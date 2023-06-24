@@ -1,11 +1,14 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:awesome_dialog/awesome_dialog.dart';
+import 'package:image_gallery_saver/image_gallery_saver.dart';
 
 class MyHome extends StatefulWidget {
   const MyHome({super.key});
@@ -19,27 +22,64 @@ class _MyHomeState extends State<MyHome> {
   File? file;
   PlatformFile? oFile;
   bool isLoading = false;
+  bool isSaving = false;
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            child: (file != null)
-                ? (urlImage == "" ? Image.file(file!) : Image.network(urlImage))
-                : const Text("Pick an Image"),
-          ),
-          OutlinedButton(
-            onPressed: () => file != null ? upload() : getFile(),
-            child: file == null
-                ? const Text("click")
-                : (isLoading
-                    ? const CircularProgressIndicator()
-                    : const Text("Remove Background")),
-          ),
-        ],
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              child: (file != null || urlImage.isNotEmpty)
+                  ? InteractiveViewer(
+                      clipBehavior: Clip.none,
+                      child: (urlImage.isEmpty
+                          ? Image.file(file!)
+                          : Image.network(
+                              urlImage,
+                              loadingBuilder:
+                                  (context, child, loadingProgress) {
+                                if (loadingProgress == null) {
+                                  return child;
+                                } else {
+                                  return const CircularProgressIndicator();
+                                }
+                              },
+                            )),
+                    )
+                  : null,
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                OutlinedButton(
+                  onPressed: () => file != null ? upload() : getFile(),
+                  child: file == null
+                      ? const Text("Pick Image")
+                      : (isLoading
+                          ? const CircularProgressIndicator()
+                          : const Text("Remove Background")),
+                ),
+                SizedBox(width: 5),
+                Visibility(
+                  visible: urlImage.isNotEmpty,
+                  child: OutlinedButton(
+                    onPressed: () {
+                      setState(() => isSaving = true);
+                      _save();
+                    },
+                    child: isSaving
+                        ? CircularProgressIndicator()
+                        : const Text("Save Image"),
+                  ),
+                )
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -54,6 +94,7 @@ class _MyHomeState extends State<MyHome> {
       setState(() {
         oFile = result.files.first;
         file = File(result.files.single.path!);
+        urlImage = "";
       });
     }
   }
@@ -67,7 +108,7 @@ class _MyHomeState extends State<MyHome> {
     final fileURI = 'data:image/$fileExtension;base64,$base64';
 
     final headers = {
-      'Authorization': 'Token a13017dc009b0534bdd158dde5c500fc1d1d84ae',
+      'Authorization': 'Token r8_4WRzcwRkd2wJ0pJcuhZsQF5ebyMnhtI0DetU0',
       'Content-Type': 'application/json',
     };
     final body = jsonEncode({
@@ -108,6 +149,7 @@ class _MyHomeState extends State<MyHome> {
         setState(() {
           urlImage = output;
           isLoading = false;
+          file = null;
         });
       } else {
         AwesomeDialog(
@@ -121,5 +163,26 @@ class _MyHomeState extends State<MyHome> {
         ).show();
       }
     }
+  }
+
+  _save() async {
+    var response = await Dio()
+        .get(urlImage, options: Options(responseType: ResponseType.bytes));
+    final result = await ImageGallerySaver.saveImage(
+      Uint8List.fromList(response.data),
+    );
+    String msg = "Not Success";
+    if (result["isSuccess"] == true) {
+      msg = "Saved in Gallery";
+      setState(() => isSaving = false);
+    }
+    Fluttertoast.showToast(
+        msg: msg,
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        timeInSecForIosWeb: 1,
+        backgroundColor: Colors.deepOrange,
+        textColor: Colors.white,
+        fontSize: 16.0);
   }
 }
